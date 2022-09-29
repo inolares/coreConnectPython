@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "coreconnect"
+version = "0.0.1"
+authors = [
+  { name="Timo Hofmann", email="t.hofmann@inolares.de" },
+]
+description = "Python package to communicate via REST API with our InoCore"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS"
+]
+
+[project.urls]
+"Homepage" = "https://github.com/inolares/coreConnectPython"
+"Bug Tracker" = "https://github.com/inolares/coreConnectPython/issues"
