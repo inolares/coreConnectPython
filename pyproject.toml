@@ -7,6 +7,7 @@ name = "coreconnect"
 version = "0.0.1"
 authors = [
   { name="Timo Hofmann", email="t.hofmann@inolares.de" },
+  { name="Sascha Pfalz", email="s.pfalz@inolares.de" }
 ]
 description = "Python package to communicate via REST API with our InoCore"
 readme = "README.md"
