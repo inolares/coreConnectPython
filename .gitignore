@@ -1,3 +1,5 @@
 .idea
 venv
 dist
+
+src/__pycache__
