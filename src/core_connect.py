@@ -3,15 +3,13 @@ Class for connecting easily to InoCore and perform HTTP requests on it.
 Written by Sascha 'SieGeL' Pfalz <s.pfalz@inolares.de> and Timo Hofmann <t.hofmann@inolares.de>
 (c) 2019-2022 Inolares GmbH & Co. KG
 """
-import sys
 import requests
 import json
 import time
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional
-from validators import url
-from pprint import pprint
+from typing import Optional, Union, Any, Tuple, List
+from validators import url as valid_url
 
 
 class AuthorizationError(Exception):
@@ -24,6 +22,13 @@ class AuthorizationError(Exception):
 class InvalidUrlException(Exception):
     """
     Raised when invalid URL given.
+    """
+    pass
+
+
+class InvalidResponseException(Exception):
+    """
+    Raised when invalid response received.
     """
     pass
 
@@ -67,7 +72,7 @@ class CoreConnect:
         """
         self.last_api_url = ''
 
-        if not url(api_url):
+        if not valid_url(api_url):
             raise InvalidUrlException('API URL is not valid!')
 
         self.api_url = api_url.rstrip('/')
@@ -95,17 +100,17 @@ class CoreConnect:
                 raise ConnectionError(f'Cannot get token: {response.reason}')
 
             try:
-                content_dict = json.loads(response.content)
+                content = response.json()
             except json.JSONDecodeError:
-                raise Exception(f'JSON error: cannot deserialize token.')
+                raise Exception('JSON error: cannot deserialize token.')
 
             try:
-                self.token = content_dict['token']
+                self.token = content['token']
             except KeyError:
                 raise Exception('API error: cannot get token!')
 
             try:
-                date = content_dict['expires']['date']
+                date = content['expires']['date']
             except KeyError:
                 raise Exception('API error: token does not have expire date!')
 
@@ -116,84 +121,134 @@ class CoreConnect:
 
             self.token_expires = dt.timestamp()
 
-    def call(self, endpoint: str, method: str, data: Optional[list] = None, params: Optional[list] = None):
+    def call(self, endpoint: str, method: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
+             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Abstract method for HTTP request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
         :param method: HTTP method
         :param data: Data to be sent to server in request body
         :param params: URL parameters
+        :raise AuthorizationError: Invalid credentials given.
+        :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
+        url = f'{self.api_url}/{endpoint}'
+        self.last_api_url = url
+
         if method not in self.SUPPORTED_METHODS:
             raise Exception(f'Method "{method}" is not supported! Must be one of [{", ".join(self.SUPPORTED_METHODS)}]')
 
+        if not valid_url(url):
+            raise InvalidUrlException(f'Error: Invalid URL {url}!')
+
         if data is None:
-            data = []
+            data = {}
         if params is None:
-            params = []
+            params = {}
 
         self.get_token()
-        url = f'{self.api_url}/{endpoint}'
 
-        response = requests.request(method, url, headers={
+        headers = {
             'Authorization': f'Bearer {self.token}',
             'user-agent': f'MCP/{self.CLASS_VERSION}'
-        }, params=params, data=data)
+        }
 
-        if response.status_code == HTTPStatus.UNAUTHORIZED:
+        res = requests.request(method, url, headers=headers, params=params, data=data)
+        return self._prepare_response(res)
+
+    def _prepare_response(self, res: requests.Response):
+        """Parse response of API.
+
+        :param res: request.Response object
+        :raise AuthorizationError: Invalid credentials given.
+        :raise ValueError: Decoding response content failed.
+        :return: Decode response content, if response was valid.
+        """
+        if res.status_code == HTTPStatus.UNAUTHORIZED:
             raise AuthorizationError(f'Failed to authorize. Check credentials.')
 
-        if response.status_code != HTTPStatus.OK:
-            raise ConnectionError(f'Call failed: {response.reason}')
-        return json.loads(response.content)
+        # if res.status_code != HTTPStatus.OK:
+        #     raise ConnectionError(f'Call failed: {res.reason}')
 
-    def get(self, endpoint: str, params: Optional[list] = None):
+        try:
+            content = res.json()
+        except json.JSONDecodeError:
+            raise ValueError('JSON error: Cannot decode response content.')
+
+        if 'statusCode' not in content:
+            raise InvalidResponseException(f'API error: Invalid response: {res.status_code} {self.last_api_url}')
+
+        try:
+            data = content['data']
+        except KeyError:
+            try:
+                emsg = f"{content['error']['description']}. {res.status_code} {self.last_api_url}"
+                raise InvalidResponseException(emsg)
+            except KeyError:
+                raise InvalidResponseException(f'Invalid response: {res.status_code} {self.last_api_url}')
+
+        if 'error' in data:
+            raise InvalidResponseException(f"{data['error']}. {res.status_code} {self.last_api_url}")
+
+        return content
+
+    def get(self, endpoint: str, params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Perform HTTP GET request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
         :param params: URL parameters
+        :raise AuthorizationError: Invalid credentials given.
+        :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
         if params is None:
-            params = []
-        return self.call(endpoint, 'GET', [], params)
+            params = {}
+        return self.call(endpoint, 'GET', {}, params)
 
-    def post(self, endpoint: str, data: Optional[list] = None, params: Optional[list] = None):
+    def post(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
+             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Perform HTTP POST request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
         :param data: Data to be sent to server in request body
         :param params: URL parameters
+        :raise AuthorizationError: Invalid credentials given.
+        :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
         if data is None:
-            data = []
+            data = {}
         if params is None:
-            params = []
+            params = {}
         return self.call(endpoint, 'POST', data, params)
 
-    def put(self, endpoint: str, data: Optional[list] = None, params: Optional[list] = None):
+    def put(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
+            params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Perform HTTP PUT request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
         :param data: Data to be sent to server in request body
         :param params: URL parameters
+        :raise AuthorizationError: Invalid credentials given.
+        :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
         if data is None:
-            data = []
+            data = {}
         if params is None:
-            params = []
+            params = {}
         return self.call(endpoint, 'PUT', data, params)
 
-    def delete(self, endpoint: str, params: Optional[list] = None):
+    def delete(self, endpoint: str, params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Perform HTTP GET request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
         :param params: URL parameters
+        :raise AuthorizationError: Invalid credentials given.
+        :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
         if params is None:
-            params = []
-        return self.call(endpoint, 'DELETE', [], params)
+            params = {}
+        return self.call(endpoint, 'DELETE', {}, params)
