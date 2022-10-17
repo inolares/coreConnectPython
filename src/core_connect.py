@@ -7,7 +7,6 @@ import sys
 import requests
 import json
 import time
-import pytz
 from datetime import datetime
 from http import HTTPStatus
 from typing import Optional
@@ -79,14 +78,13 @@ class CoreConnect:
         self.token_expires = 0
 
     def get_token(self):
-        """Get JSON Web Token for authentication and store it in token. Update token_expires.
+        """If a valid token exists, do nothing. Otherwise, get JSON web token for authentication.
 
+        :return: None
         """
         if time.time() >= self.token_expires or self.token == '':
             response = requests.post(f'{self.api_url}/token', headers={'user-agent': self.USER_AGENT},
                                      auth=(self.username, self.password))
-
-            t = time.time()
 
             self.last_api_url = '/token'
 
@@ -108,13 +106,14 @@ class CoreConnect:
 
             try:
                 date = content_dict['expires']['date']
-                fmt = '%Y-%m-%d %H:%M:%S.%f'
-                tz = pytz.timezone(content_dict['expires']['timezone'])
             except KeyError:
                 raise Exception('API error: token does not have expire date!')
 
-            # dt = datetime.strptime(date, fmt).replace(tzinfo=tz)
-            dt = datetime.strptime(date, fmt)
+            try:
+                dt = datetime.fromisoformat(date)
+            except ValueError:
+                raise Exception('API error: expire date is not valid ISO format!')
+
             self.token_expires = dt.timestamp()
 
     def call(self, endpoint: str, method: str, data: Optional[list] = None, params: Optional[list] = None):
