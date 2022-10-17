@@ -1,5 +1,5 @@
 import time
-from core_connect import CoreConnect
+from src import core_connect
 from pprint import pprint
 
 
@@ -10,7 +10,7 @@ PROJECT_ID = 'tEsT@ino'
 
 
 def main():
-    cc = CoreConnect(URL, USER, PASS, PROJECT_ID)
+    cc = core_connect.CoreConnect(URL, USER, PASS, PROJECT_ID)
     # cc.get_token()
     # time.sleep(5)
     # cc.get_token()

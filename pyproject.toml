@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coreconnect"
-version = "0.0.1"
+version = "2.0.0"
 authors = [
   { name="Timo Hofmann", email="t.hofmann@inolares.de" },
   { name="Sascha Pfalz", email="s.pfalz@inolares.de" }

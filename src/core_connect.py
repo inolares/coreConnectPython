@@ -47,7 +47,7 @@ class CoreConnect:
         token: JSON Web Token for authentication
         token_expires: Time when token expires as UNIX timestamp
     """
-    CLASS_VERSION = '1.0.1'
+    CLASS_VERSION = '2.0.0'
     USER_AGENT = f'coreConnectPython/{CLASS_VERSION}'
 
     METHOD_GET = 'GET'
