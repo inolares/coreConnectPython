@@ -3,10 +3,10 @@ from src import core_connect
 from pprint import pprint
 
 
-URL = 'http://localhost:8080/'
-USER = 'daemon@localhost'
-PASS = 'daemon2k22'
-PROJECT_ID = 'tEsT@ino'
+URL = 'url'
+USER = 'user'
+PASS = 'password'
+PROJECT_ID = 'project_id'
 
 
 def main():
