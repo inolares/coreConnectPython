@@ -12,6 +12,10 @@ authors = [
 description = "Python package to communicate via REST API with our InoCore"
 readme = "README.md"
 requires-python = ">=3.8"
+dependencies = [
+    'requests >= "2.28.0"',
+    'validator >= "0.20.0'
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: BSD License",
