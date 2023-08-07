@@ -1,7 +1,7 @@
 """
 Class for connecting easily to InoCore and perform HTTP requests on it.
 Written by Sascha 'SieGeL' Pfalz <s.pfalz@inolares.de> and Timo Hofmann <t.hofmann@inolares.de>
-(c) 2019-2022 Inolares GmbH & Co. KG
+(c) 2019-2023 Inolares GmbH & Co. KG
 """
 import requests
 import json
@@ -33,6 +33,13 @@ class InvalidResponseException(Exception):
     pass
 
 
+class InvalidMethodException(Exception):
+    """
+    Raised when invalid method given.
+    """
+    pass
+
+
 class CoreConnect:
     """Class for connecting easily to InoCore and perform HTTP requests on it.
 
@@ -47,7 +54,7 @@ class CoreConnect:
         token: JSON Web Token for authentication
         token_expires: Time when token expires as UNIX timestamp
     """
-    CLASS_VERSION = '2.0.0'
+    CLASS_VERSION = '2.1.0'
     USER_AGENT = f'coreConnectPython/{CLASS_VERSION}'
 
     METHOD_GET = 'GET'
@@ -62,18 +69,29 @@ class CoreConnect:
         METHOD_DELETE
     ]
 
-    def __init__(self, api_url: str, username: str, password: str, project_id: str):
+    # Instead we could also use Response.ok() or Response.raise_for_status(). Those check if status_code < 400.
+    SUCCESSFUL_RESPONSE_CODES = [
+        HTTPStatus.OK,
+        HTTPStatus.CREATED,
+        HTTPStatus.ACCEPTED,
+        HTTPStatus.NON_AUTHORITATIVE_INFORMATION,
+        HTTPStatus.NO_CONTENT
+    ]
+
+    def __init__(self, api_url: str, username: str, password: str, project_id: str, verify_peer: bool = True):
         """Inits CoreConnect.
 
         :param api_url: URL of InoCore instance.
         :param username: Username or email address of user
         :param password: Password for user
         :param project_id: ID of project
+        :param verify_peer: When False, TLS will not be verified, so you can use self-signed TLS certificates. ONLY use
+                            when you know what you are doing.
         """
         self.last_api_url = ''
 
         if not valid_url(api_url):
-            raise InvalidUrlException('API URL is not valid!')
+            raise InvalidUrlException('API URL is not valid.')
 
         self.api_url = api_url.rstrip('/')
         self.username = username
@@ -81,6 +99,7 @@ class CoreConnect:
         self.project_id = project_id
         self.token = ''
         self.token_expires = 0
+        self.verify_peer = verify_peer
 
     def get_token(self):
         """If a valid token exists, do nothing. Otherwise, get JSON web token for authentication.
@@ -88,41 +107,47 @@ class CoreConnect:
         :return: None
         """
         if time.time() >= self.token_expires or self.token == '':
-            response = requests.post(f'{self.api_url}/token', headers={'user-agent': self.USER_AGENT},
-                                     auth=(self.username, self.password))
+            headers = {
+                'Content-Type': 'application/json; charset=utf-8',
+                'user-agent': self.USER_AGENT
+            }
+            res = requests.post(f'{self.api_url}/token',
+                                     headers=headers,
+                                     auth=(self.username, self.password),
+                                     verify=self.verify_peer)
 
             self.last_api_url = '/token'
 
-            if response.status_code == HTTPStatus.UNAUTHORIZED:
+            if res.status_code == HTTPStatus.UNAUTHORIZED:
                 raise AuthorizationError(f'Failed to authorize. Check credentials.')
 
-            if response.status_code != HTTPStatus.CREATED:
-                raise ConnectionError(f'Cannot get token: {response.reason}')
+            if res.status_code != HTTPStatus.CREATED:
+                self._raise_invalid_response(res.status_code, res.reason, 'Could not get token.')
 
             try:
-                content = response.json()
+                content = res.json()
             except json.JSONDecodeError:
-                raise Exception('JSON error: cannot deserialize token.')
+                self._raise_invalid_response(res.status_code, res.reason, 'JSON Error: Cannot deserialize token.')
 
             try:
                 self.token = content['token']
             except KeyError:
-                raise Exception('API error: cannot get token!')
+                self._raise_invalid_response(res.status_code, res.reason, 'API Error: Cannot get token.')
 
             try:
                 date = content['expires']['date']
             except KeyError:
-                raise Exception('API error: token does not have expire date!')
+                self._raise_invalid_response(res.status_code, res.reason, 'API Error: Token does not have expire date.')
 
             try:
                 dt = datetime.fromisoformat(date)
             except ValueError:
-                raise Exception('API error: expire date is not valid ISO format!')
+                self._raise_invalid_response(res.status_code, res.reason,'API Error: Expire date is not valid ISO format.')
 
             self.token_expires = dt.timestamp()
 
     def call(self, endpoint: str, method: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
-             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
+             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None) -> dict:
         """Abstract method for HTTP request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
@@ -134,13 +159,12 @@ class CoreConnect:
         :return: Content of response as Python object (mostly dict)
         """
         url = f'{self.api_url}/{endpoint}'
-        self.last_api_url = url
 
         if method not in self.SUPPORTED_METHODS:
-            raise Exception(f'Method "{method}" is not supported! Must be one of [{", ".join(self.SUPPORTED_METHODS)}]')
+            raise InvalidMethodException(f'Method "{method}" is not supported. Must be one of [{", ".join(self.SUPPORTED_METHODS)}].')
 
         if not valid_url(url):
-            raise InvalidUrlException(f'Error: Invalid URL {url}!')
+            raise InvalidUrlException(f'Invalid URL {url}.')
 
         if data is None:
             data = {}
@@ -148,16 +172,54 @@ class CoreConnect:
             params = {}
 
         self.get_token()
+        self.last_api_url = url
 
         headers = {
             'Authorization': f'Bearer {self.token}',
-            'user-agent': f'MCP/{self.CLASS_VERSION}'
+            'Content-Type': 'application/json; charset=utf-8',
+            'user-agent': self.USER_AGENT
         }
 
-        res = requests.request(method, url, headers=headers, params=params, data=data)
+        # Add params to URL.
+        if params:
+            url += self._add_params(params)
+
+        res = requests.request(method, url, headers=headers, json=data)
         return self._prepare_response(res)
 
-    def _prepare_response(self, res: requests.Response):
+    @staticmethod
+    def _add_params(params: dict) -> str:
+        """Return query parameter as string to be added to URL. String is not yet URL encoded!
+
+        :param params: The URL query parameters.
+        :return: Query parameters as string, ready to be added to URL and to be URL encoded.
+        """
+        result = '?'
+
+        for option, value in params.items():
+
+            # E.g. list of filters
+            if isinstance(value, list):
+                for i, v in enumerate(value):
+                    if isinstance(v, dict):
+                        for key, val in v.items():
+                            result += f'{option}[{i}][{key}]={val}&'
+                    # 1-dimensional values.
+                    elif isinstance(v, int) or isinstance(v, float) or isinstance(v, str):
+                        result += f'{option}[{i}]={v}&'
+                    # TODO: Other types than dict, int, float and str, e.g. lists.
+
+            # TODO: Implement dict.
+            elif isinstance(value, dict):
+                continue
+
+            # 1-dimensional option, e.g. value type int, float or str.
+            else:
+                result += f'{option}={value}&'
+
+        return result.rstrip('&')
+
+    def _prepare_response(self, res: requests.Response) -> dict:
         """Parse response of API.
 
         :param res: request.Response object
@@ -168,30 +230,42 @@ class CoreConnect:
         if res.status_code == HTTPStatus.UNAUTHORIZED:
             raise AuthorizationError(f'Failed to authorize. Check credentials.')
 
-        # if res.status_code != HTTPStatus.OK:
-        #     raise ConnectionError(f'Call failed: {res.reason}')
+        if res.status_code not in self.SUCCESSFUL_RESPONSE_CODES:
+            self._raise_invalid_response(res.status_code, res.reason, res.text)
 
         try:
             content = res.json()
         except json.JSONDecodeError:
-            raise ValueError('JSON error: Cannot decode response content.')
+            self._raise_invalid_response(res.status_code, res.reason, f'JSON error: f{res.text}')
 
         if 'statusCode' not in content:
-            raise InvalidResponseException(f'API error: Invalid response: {res.status_code} {self.last_api_url}')
+            raise self._raise_invalid_response(res.status_code, res.reason, f'{content}')
 
         try:
             data = content['data']
         except KeyError:
             try:
-                emsg = f"{content['error']['description']}. {res.status_code} {self.last_api_url}"
-                raise InvalidResponseException(emsg)
+                self._raise_invalid_response(res.status_code, res.reason, f"{content['error']}")
             except KeyError:
-                raise InvalidResponseException(f'Invalid response: {res.status_code} {self.last_api_url}')
+                self._raise_invalid_response(res.status_code, res.reason, f'{content}')
 
         if 'error' in data:
-            raise InvalidResponseException(f"{data['error']}. {res.status_code} {self.last_api_url}")
+            self._raise_invalid_response(res.status_code, res.reason, f"{content['error']}")
 
         return content
+
+    def _raise_invalid_response(self, status_code: int, reason: str, msg: str = None):
+        """Print msg when given. Raise InvalidResponseException with HTTP status code, HTTP reason and the called URL.
+
+        :param status_code: HTTP status code.
+        :param reason: HTTP reason/description.
+        :param msg: Optional message, e.g. Response as plain text.
+        :raises: InvalidResponseException
+        :return: None
+        """
+        if msg:
+            print(msg)
+        raise InvalidResponseException(f'HTTP {status_code} {reason}: {self.last_api_url}')
 
     def get(self, endpoint: str, params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Perform HTTP GET request.
@@ -202,9 +276,7 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        if params is None:
-            params = {}
-        return self.call(endpoint, 'GET', {}, params)
+        return self.call(endpoint, self.METHOD_GET, {}, params)
 
     def post(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
              params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
@@ -217,11 +289,7 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        if data is None:
-            data = {}
-        if params is None:
-            params = {}
-        return self.call(endpoint, 'POST', data, params)
+        return self.call(endpoint, self.METHOD_POST, data, params)
 
     def put(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
@@ -234,21 +302,17 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        if data is None:
-            data = {}
-        if params is None:
-            params = {}
-        return self.call(endpoint, 'PUT', data, params)
+        return self.call(endpoint, self.METHOD_PUT, data, params)
 
-    def delete(self, endpoint: str, params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
+    def delete(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
+               params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
         """Perform HTTP GET request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
+        :param data: Data to be sent to server in request body
         :param params: URL parameters
         :raise AuthorizationError: Invalid credentials given.
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        if params is None:
-            params = {}
-        return self.call(endpoint, 'DELETE', {}, params)
+        return self.call(endpoint, self.METHOD_DELETE, data, params)
