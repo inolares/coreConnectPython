@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "coreconnect"
+name = "core_connect"
 version = "2.1.0"
 authors = [
   { name="Timo Hofmann", email="t.hofmann@inolares.de" },
@@ -13,8 +13,8 @@ description = "Python package to communicate via REST API with our InoCore"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    'requests >= "2.28.0"',
-    'validators >= "0.20.0'
+    "requests >= 2.28.0",
+    "validators >= 0.20.0"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

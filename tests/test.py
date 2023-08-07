@@ -1,7 +1,4 @@
-import time
 from src import core_connect
-from pprint import pprint
-
 
 URL = 'url'
 USER = 'user'

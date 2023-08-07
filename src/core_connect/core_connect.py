@@ -78,7 +78,8 @@ class CoreConnect:
         HTTPStatus.NO_CONTENT
     ]
 
-    def __init__(self, api_url: str, username: str, password: str, project_id: str, verify_peer: bool = True):
+    def __init__(self, api_url: str, username: str, password: str, project_id: str, verify_peer: bool = True,
+                 return_object: bool = False):
         """Inits CoreConnect.
 
         :param api_url: URL of InoCore instance.
@@ -87,6 +88,7 @@ class CoreConnect:
         :param project_id: ID of project
         :param verify_peer: When False, TLS will not be verified, so you can use self-signed TLS certificates. ONLY use
                             when you know what you are doing.
+        :param return_object: When true, returns Response object instead of JSON.
         """
         self.last_api_url = ''
 
@@ -100,6 +102,7 @@ class CoreConnect:
         self.token = ''
         self.token_expires = 0
         self.verify_peer = verify_peer
+        self.return_object = return_object
 
     def get_token(self):
         """If a valid token exists, do nothing. Otherwise, get JSON web token for authentication.
@@ -147,7 +150,7 @@ class CoreConnect:
             self.token_expires = dt.timestamp()
 
     def call(self, endpoint: str, method: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
-             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None) -> dict:
+             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None) -> Union[dict, requests.Response]:
         """Abstract method for HTTP request.
 
         :param endpoint: Path of API endpoint (e.g. v1/daemons)
@@ -185,6 +188,8 @@ class CoreConnect:
             url += self._add_params(params)
 
         res = requests.request(method, url, headers=headers, json=data)
+        if self.return_object:
+            return res
         return self._prepare_response(res)
 
     @staticmethod
