@@ -9,6 +9,7 @@ authors = [
   { name="Timo Hofmann", email="t.hofmann@inolares.de" },
   { name="Sascha Pfalz", email="s.pfalz@inolares.de" }
 ]
+license = "BSD-3-Clause"
 description = "Python package to communicate via REST API with our InoCore"
 readme = "README.md"
 requires-python = ">=3.8"

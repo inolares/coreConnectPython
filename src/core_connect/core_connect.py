@@ -1,6 +1,6 @@
 """
 Class for connecting easily to InoCore and perform HTTP requests on it.
-Written by Sascha 'SieGeL' Pfalz <s.pfalz@inolares.de> and Timo Hofmann <t.hofmann@inolares.de>
+Written by Timo Hofmann <t.hofmann@inolares.de> and Sascha 'SieGeL' Pfalz <s.pfalz@inolares.de>
 (c) 2019-2023 Inolares GmbH & Co. KG
 """
 import requests
@@ -53,6 +53,9 @@ class CoreConnect:
         project_id: ID of project
         token: JSON Web Token for authentication
         token_expires: Time when token expires as UNIX timestamp
+        verify_peer: When False, TLS will not be verified, so you can use self-signed TLS certificates. ONLY use
+                            when you know what you are doing.
+        return_object: When true, returns Response object instead of JSON.
     """
     CLASS_VERSION = '2.1.0'
     USER_AGENT = f'coreConnectPython/{CLASS_VERSION}'
@@ -149,7 +152,7 @@ class CoreConnect:
 
             self.token_expires = dt.timestamp()
 
-    def call(self, endpoint: str, method: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
+    def _call(self, endpoint: str, method: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
              params: Optional[Union[dict, List[Tuple[str, Any]]]] = None) -> Union[dict, requests.Response]:
         """Abstract method for HTTP request.
 
@@ -281,7 +284,7 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        return self.call(endpoint, self.METHOD_GET, {}, params)
+        return self._call(endpoint, self.METHOD_GET, {}, params)
 
     def post(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
              params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
@@ -294,7 +297,7 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        return self.call(endpoint, self.METHOD_POST, data, params)
+        return self._call(endpoint, self.METHOD_POST, data, params)
 
     def put(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
             params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
@@ -307,7 +310,7 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        return self.call(endpoint, self.METHOD_PUT, data, params)
+        return self._call(endpoint, self.METHOD_PUT, data, params)
 
     def delete(self, endpoint: str, data: Optional[Union[dict, List[Tuple[str, Any]]]] = None,
                params: Optional[Union[dict, List[Tuple[str, Any]]]] = None):
@@ -320,4 +323,4 @@ class CoreConnect:
         :raise ValueError: Decoding response content failed.
         :return: Content of response as Python object (mostly dict)
         """
-        return self.call(endpoint, self.METHOD_DELETE, data, params)
+        return self._call(endpoint, self.METHOD_DELETE, data, params)
