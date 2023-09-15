@@ -57,7 +57,7 @@ class CoreConnect:
                             when you know what you are doing.
         return_object: When true, returns Response object instead of JSON.
     """
-    CLASS_VERSION = '2.1.0'
+    CLASS_VERSION = '2.1.1'
     USER_AGENT = f'coreConnectPython/{CLASS_VERSION}'
 
     METHOD_GET = 'GET'
